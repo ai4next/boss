@@ -1,0 +1,15 @@
+apiVersion: boss.io/v1
+kind: Pod
+metadata:
+  name: sleep-pod
+  namespace: default
+  labels:
+    app: sleep
+spec:
+  sandboxClass: process
+  containers:
+    - name: sleep
+      image: ""
+      command: ["sleep"]
+      args: ["300"]
+  restartPolicy: Never

@@ -1,0 +1,73 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/boss-common",
+    "crates/boss-api",
+    "crates/boss-store",
+    "crates/boss-apiserver",
+    "crates/boss-scheduler",
+    "crates/boss-controller-manager",
+    "crates/bosslet",
+    "crates/boss-runtime",
+    "crates/bossctl",
+    "bin/boss-server",
+    "bin/boss-node",
+]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.95.0"
+license = "Apache-2.0"
+version = "0.1.0"
+
+[workspace.dependencies]
+# async runtime
+tokio = { version = "1", features = ["full"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+tokio-util = "0.7"
+futures = "0.3"
+async-trait = "0.1"
+
+# serde / data
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+
+# http
+axum = { version = "0.8", features = ["macros"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["trace", "cors"] }
+reqwest = { version = "0.12", features = ["json", "stream"] }
+
+# observability
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# errors / utils
+thiserror = "2"
+anyhow = "1"
+clap = { version = "4", features = ["derive", "env"] }
+uuid = { version = "1", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+bytes = "1"
+parking_lot = "0.12"
+dashmap = "6"
+
+# internal crates
+boss-common = { path = "crates/boss-common" }
+boss-api = { path = "crates/boss-api" }
+boss-store = { path = "crates/boss-store" }
+boss-apiserver = { path = "crates/boss-apiserver" }
+boss-scheduler = { path = "crates/boss-scheduler" }
+boss-controller-manager = { path = "crates/boss-controller-manager" }
+bosslet = { path = "crates/bosslet" }
+boss-runtime = { path = "crates/boss-runtime" }
+
+[profile.dev]
+opt-level = 0
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+opt-level = 3
+strip = "symbols"

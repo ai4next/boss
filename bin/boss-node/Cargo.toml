@@ -1,0 +1,17 @@
+[package]
+name = "boss-node"
+edition.workspace = true
+rust-version.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+boss-common.workspace = true
+boss-api.workspace = true
+boss-store.workspace = true
+boss-runtime.workspace = true
+bosslet.workspace = true
+tokio.workspace = true
+clap.workspace = true
+tracing.workspace = true
+anyhow.workspace = true

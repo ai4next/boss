@@ -1,0 +1,21 @@
+apiVersion: boss.io/v1
+kind: Pod
+metadata:
+  name: demo-container
+  namespace: default
+  labels:
+    app: demo-container
+spec:
+  sandboxClass: container
+  sandbox:
+    artifact:
+      type: containerImage
+      image: ghcr.io/example/demo:latest
+    isolation: namespaced
+    network:
+      mode: host
+  containers:
+    - name: app
+      image: ghcr.io/example/demo:latest
+      args: ["--serve"]
+  restartPolicy: Never

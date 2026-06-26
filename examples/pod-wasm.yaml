@@ -1,0 +1,20 @@
+apiVersion: boss.io/v1
+kind: Pod
+metadata:
+  name: demo-wasm
+  namespace: default
+  labels:
+    app: demo-wasm
+spec:
+  sandboxClass: wasm
+  sandbox:
+    artifact:
+      type: wasmModule
+      uri: oci://example.com/demo.wasm:1.0.0
+    isolation: runtimeSandboxed
+    network:
+      mode: none
+  containers:
+    - name: app
+      args: ["--serve"]
+  restartPolicy: Never

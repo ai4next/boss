@@ -1,0 +1,20 @@
+apiVersion: boss.io/v1
+kind: Pod
+metadata:
+  name: demo-microvm
+  namespace: default
+  labels:
+    app: demo-microvm
+spec:
+  sandboxClass: microvm
+  sandbox:
+    artifact:
+      type: rootfsImage
+      uri: oci://example.com/demo-rootfs:latest
+    isolation: hardwareVirtualized
+    network:
+      mode: none
+  containers:
+    - name: app
+      args: ["--serve"]
+  restartPolicy: Never

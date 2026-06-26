@@ -1,0 +1,25 @@
+[package]
+name = "boss-store"
+edition.workspace = true
+rust-version.workspace = true
+version.workspace = true
+license.workspace = true
+
+[features]
+default = []
+# Raft-backed registry (Phase 5). Currently a stub.
+raft = ["dep:openraft"]
+
+[dependencies]
+boss-common.workspace = true
+boss-api.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
+futures.workspace = true
+async-trait.workspace = true
+parking_lot.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+openraft = { version = "0.9", optional = true }

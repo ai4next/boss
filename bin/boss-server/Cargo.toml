@@ -1,0 +1,18 @@
+[package]
+name = "boss-server"
+edition.workspace = true
+rust-version.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+boss-common.workspace = true
+boss-api.workspace = true
+boss-store.workspace = true
+boss-apiserver.workspace = true
+boss-scheduler.workspace = true
+boss-controller-manager.workspace = true
+tokio.workspace = true
+clap.workspace = true
+tracing.workspace = true
+anyhow.workspace = true
