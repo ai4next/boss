@@ -65,7 +65,8 @@ pub async fn update_status(
     Json(body): Json<Deployment>,
 ) -> ApiResult<impl IntoResponse> {
     let deployment =
-        generic::update::<DeploymentSpec>(&state, RESOURCE, Some(&namespace), &name, body).await?;
+        generic::update_status::<DeploymentSpec>(&state, RESOURCE, Some(&namespace), &name, body)
+            .await?;
     Ok(Json(deployment))
 }
 

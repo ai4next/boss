@@ -18,6 +18,7 @@ pub const REASON_INVALID_SPEC: &str = "InvalidSpec";
 pub const REASON_CREATE_FAILED: &str = "CreateFailed";
 pub const REASON_START_FAILED: &str = "StartFailed";
 pub const REASON_STATUS_UNKNOWN: &str = "StatusUnknown";
+pub const REASON_UNSCHEDULABLE: &str = "Unschedulable";
 
 pub fn normalize_sandbox_class(value: &str) -> Option<&'static str> {
     match value.to_ascii_lowercase().as_str() {
@@ -244,6 +245,130 @@ impl PodSpec {
             .unwrap_or(DEFAULT_SANDBOX_CLASS)
             .to_string()
     }
+
+    pub fn resolved_sandbox_intent(&self) -> ResolvedSandboxIntent {
+        self.sandbox_intent_for_class(self.resolved_sandbox_class())
+    }
+
+    pub fn try_resolved_sandbox_intent(&self) -> Result<ResolvedSandboxIntent, SandboxIntentError> {
+        let sandbox_class = self
+            .sandbox_class
+            .as_deref()
+            .map(|value| {
+                normalize_sandbox_class(value).ok_or_else(|| {
+                    SandboxIntentError::new(
+                        REASON_UNSUPPORTED_CLASS,
+                        format!("unsupported sandboxClass {value}"),
+                    )
+                })
+            })
+            .transpose()?;
+        let runtime_class = self
+            .runtime_class
+            .as_deref()
+            .map(|value| {
+                normalize_sandbox_class(value).ok_or_else(|| {
+                    SandboxIntentError::new(
+                        REASON_UNSUPPORTED_CLASS,
+                        format!("unsupported runtimeClass {value}"),
+                    )
+                })
+            })
+            .transpose()?;
+
+        if let (Some(sandbox_class), Some(runtime_class)) = (sandbox_class, runtime_class)
+            && sandbox_class != runtime_class
+        {
+            return Err(SandboxIntentError::new(
+                REASON_INVALID_SPEC,
+                format!(
+                    "sandboxClass resolves to {sandbox_class}, but runtimeClass resolves to {runtime_class}"
+                ),
+            ));
+        }
+
+        let class = sandbox_class
+            .or(runtime_class)
+            .unwrap_or(DEFAULT_SANDBOX_CLASS)
+            .to_string();
+        Ok(self.sandbox_intent_for_class(class))
+    }
+
+    fn sandbox_intent_for_class(&self, class: String) -> ResolvedSandboxIntent {
+        let sandbox = self.sandbox.as_ref();
+        ResolvedSandboxIntent {
+            class,
+            artifact_type: sandbox
+                .and_then(|sandbox| sandbox.artifact.as_ref())
+                .map(|artifact| artifact.kind.clone()),
+            network_mode: sandbox
+                .and_then(|sandbox| sandbox.network.as_ref())
+                .and_then(|network| network.mode.clone()),
+            isolation: sandbox.and_then(|sandbox| sandbox.isolation.clone()),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SandboxIntentError {
+    pub reason: &'static str,
+    pub message: String,
+}
+
+impl SandboxIntentError {
+    pub fn new(reason: &'static str, message: impl Into<String>) -> Self {
+        Self {
+            reason,
+            message: message.into(),
+        }
+    }
+}
+
+impl std::fmt::Display for SandboxIntentError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "{}", self.message)
+    }
+}
+
+impl std::error::Error for SandboxIntentError {}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResolvedSandboxIntent {
+    pub class: String,
+    #[serde(
+        default,
+        rename = "artifactType",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub artifact_type: Option<String>,
+    #[serde(
+        default,
+        rename = "networkMode",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub network_mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub isolation: Option<String>,
+}
+
+impl ResolvedSandboxIntent {
+    pub fn unsupported_message(&self) -> String {
+        let mut parts = vec![format!("class={}", self.class)];
+        if let Some(artifact_type) = &self.artifact_type {
+            parts.push(format!("artifactType={artifact_type}"));
+        }
+        if let Some(network_mode) = &self.network_mode {
+            parts.push(format!("networkMode={network_mode}"));
+        }
+        if let Some(isolation) = &self.isolation {
+            parts.push(format!("isolation={isolation}"));
+        }
+        format!(
+            "no healthy provider supports sandbox intent ({})",
+            parts.join(", ")
+        )
+    }
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -296,4 +421,67 @@ impl Resource for PodSpec {
     type Status = PodStatus;
     const KIND: &'static str = "Pod";
     const API_VERSION: &'static str = "boss.io/v1";
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolves_sandbox_intent_from_pod_spec() {
+        let spec = PodSpec {
+            sandbox_class: Some("baremetal".to_string()),
+            sandbox: Some(SandboxRequirements {
+                artifact: Some(SandboxArtifact {
+                    kind: "executable".to_string(),
+                    path: Some("sleep".to_string()),
+                    ..Default::default()
+                }),
+                network: Some(SandboxNetwork {
+                    mode: Some("host".to_string()),
+                }),
+                isolation: Some("sharedHost".to_string()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            spec.resolved_sandbox_intent(),
+            ResolvedSandboxIntent {
+                class: "process".to_string(),
+                artifact_type: Some("executable".to_string()),
+                network_mode: Some("host".to_string()),
+                isolation: Some("sharedHost".to_string()),
+            }
+        );
+    }
+
+    #[test]
+    fn rejects_unknown_sandbox_class() {
+        let spec = PodSpec {
+            sandbox_class: Some("unknown".to_string()),
+            ..Default::default()
+        };
+
+        let error = spec.try_resolved_sandbox_intent().unwrap_err();
+        assert_eq!(error.reason, REASON_UNSUPPORTED_CLASS);
+        assert_eq!(error.message, "unsupported sandboxClass unknown");
+    }
+
+    #[test]
+    fn rejects_conflicting_sandbox_and_runtime_classes() {
+        let spec = PodSpec {
+            sandbox_class: Some("wasm".to_string()),
+            runtime_class: Some("container".to_string()),
+            ..Default::default()
+        };
+
+        let error = spec.try_resolved_sandbox_intent().unwrap_err();
+        assert_eq!(error.reason, REASON_INVALID_SPEC);
+        assert_eq!(
+            error.message,
+            "sandboxClass resolves to wasm, but runtimeClass resolves to container"
+        );
+    }
 }

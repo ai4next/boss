@@ -65,7 +65,8 @@ pub async fn update_status(
     Json(body): Json<ReplicaSet>,
 ) -> ApiResult<impl IntoResponse> {
     let replicaset =
-        generic::update::<ReplicaSetSpec>(&state, RESOURCE, Some(&namespace), &name, body).await?;
+        generic::update_status::<ReplicaSetSpec>(&state, RESOURCE, Some(&namespace), &name, body)
+            .await?;
     Ok(Json(replicaset))
 }
 

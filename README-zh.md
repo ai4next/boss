@@ -2,7 +2,7 @@
 
 一个用 Rust 编写的沙箱原生（sandbox-native）编排与调度系统（edition 2024）。项目聚焦异构执行：进程、容器、虚拟机、微虚拟机、WASM 和远程沙箱共享同一套控制面，而不被强行塞入单一运行时模型。
 
-当前已具备可工作的控制面、节点代理、能力感知调度器和进程运行时路径。容器、VM 和 WASM Provider 处于桩阶段，控制器框架和真实 Provider 实现仍在建设中。
+当前已具备可工作的控制面、节点代理、能力感知调度器、控制器循环、Deployment/ReplicaSet 收敛和进程运行时路径。容器、WASM 和 VM/microVM Provider 已通过本地 CLI（`docker`/`podman`、`wasmtime`、`qemu-system-*`）接入；本地后端缺失时会明确上报 unhealthy。
 
 ## 工作区布局
 
@@ -10,15 +10,15 @@
 crates/
   boss-common            # 错误、日志、ID、时间
   boss-api               # 纯 serde 数据模型（Object<T>, Pod, Node...）
-  boss-store             # Storage trait + InMemoryRegistry + WatchBus (raft: stub)
+  boss-store             # Storage trait + 内存 registry + WatchBus
   boss-apiserver         # axum CRUD + 换行分隔 watch + CAS
   boss-scheduler         # 能力感知的 Pod 到节点/Provider 绑定
-  boss-controller-manager# reconciler trait 骨架，控制器循环待实现
+  boss-controller-manager# watch 驱动 workqueue + Deployment/ReplicaSet 收敛
   bosslet                # 节点代理：watch → sync → runtime → status → heartbeat
-  boss-runtime           # Runtime trait + BareMetal（真实）+ container/vm/wasm（桩）
+  boss-runtime           # Runtime trait + process/container/wasm/vm Provider
   bossctl                # CLI 客户端（apply / get / delete / watch）
 bin/
-  boss-server            # 控制面：apiserver + storage + scheduler + CM 骨架
+  boss-server            # 控制面：apiserver + storage + scheduler + controller manager
   boss-node              # 节点：bosslet + RuntimeManager 多个 Provider
 ```
 
@@ -91,6 +91,7 @@ BOSS_API_SERVER=http://127.0.0.1:18080 BOSS_NODE_NAME=node-B make run-node
 
 - ✅ 工作区、数据模型、内存存储、apiserver、CLI、bosslet、baremetal 运行时 — 端到端可运行。
 - ✅ Pod 沙箱意图、Node 运行时能力、RuntimeManager Provider 索引、调度器绑定和 bosslet Provider 选择已有基础支持。
-- ⬜ 控制器管理器 reconcile 循环、Deployment/ReplicaSet 控制器、workqueue 和状态条件待实现。
-- ⬜ 制品解析器/缓存、更丰富的调度评分和真实的 container/vm/wasm Provider 待实现。
+- ✅ 控制器管理器已有 watch 驱动 workqueue、Deployment/ReplicaSet 收敛、基础 GC 和状态条件。
+- ✅ process、container、WASM、VM/microVM 运行路径已通过本地 Provider 实现。
+- ⬜ 生产级制品缓存、更丰富的调度评分、HA 和安全加固属于未来工作。
 - ⬜ raft 存储、多副本控制面、领导者选举、认证/授权/RBAC 和准入策略属于未来的生产化工作。

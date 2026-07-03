@@ -29,9 +29,12 @@ async fn main() -> Result<()> {
 
     let runtime = RuntimeManager::new();
     runtime.register(RuntimeClass::BareMetal, Arc::new(BareMetalRuntime::new()));
-    runtime.register(RuntimeClass::Container, Arc::new(ContainerRuntime));
-    runtime.register(RuntimeClass::Vm, Arc::new(VmRuntime));
-    runtime.register(RuntimeClass::Wasm, Arc::new(WasmRuntime));
+    runtime.register(RuntimeClass::Container, Arc::new(ContainerRuntime::new()));
+    runtime.register_provider(
+        Arc::new(VmRuntime::new()),
+        vec!["vm".to_string(), "microvm".to_string()],
+    );
+    runtime.register(RuntimeClass::Wasm, Arc::new(WasmRuntime::new()));
 
     let bosslet = Arc::new(Bosslet::new(args.node.clone(), client, runtime));
     tracing::info!(node = %args.node, apiserver = %args.apiserver, "boss-node starting");

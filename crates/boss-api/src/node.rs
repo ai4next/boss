@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{Resource, ResourceList, meta::Labels};
+use crate::{ResolvedSandboxIntent, Resource, ResourceList, meta::Labels};
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -83,6 +83,15 @@ impl RuntimeCapabilities {
             .iter()
             .find(|provider| provider.healthy && provider.supports_class(class))
     }
+
+    pub fn healthy_provider_for_intent(
+        &self,
+        intent: &ResolvedSandboxIntent,
+    ) -> Option<&RuntimeProviderStatus> {
+        self.providers
+            .iter()
+            .find(|provider| provider.healthy && provider.supports_sandbox_intent(intent))
+    }
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -121,6 +130,37 @@ impl RuntimeProviderStatus {
     pub fn supports_class(&self, class: &str) -> bool {
         self.classes.iter().any(|candidate| candidate == class)
     }
+
+    pub fn supports_artifact_type(&self, artifact_type: Option<&str>) -> bool {
+        artifact_type
+            .map(|required| supports_optional_value(&self.artifact_types, required))
+            .unwrap_or(true)
+    }
+
+    pub fn supports_network_mode(&self, network_mode: Option<&str>) -> bool {
+        network_mode
+            .map(|required| supports_optional_value(&self.network_modes, required))
+            .unwrap_or(true)
+    }
+
+    pub fn supports_isolation_level(&self, isolation_level: Option<&str>) -> bool {
+        isolation_level
+            .map(|required| supports_optional_value(&self.isolation_levels, required))
+            .unwrap_or(true)
+    }
+
+    pub fn supports_sandbox_intent(&self, intent: &ResolvedSandboxIntent) -> bool {
+        self.supports_class(&intent.class)
+            && self.supports_artifact_type(intent.artifact_type.as_deref())
+            && self.supports_network_mode(intent.network_mode.as_deref())
+            && self.supports_isolation_level(intent.isolation.as_deref())
+    }
+}
+
+fn supports_optional_value(supported: &[String], required: &str) -> bool {
+    supported
+        .iter()
+        .any(|candidate| candidate.eq_ignore_ascii_case(required))
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -152,4 +192,45 @@ impl Resource for NodeSpec {
     type Status = NodeStatus;
     const KIND: &'static str = "Node";
     const API_VERSION: &'static str = "boss.io/v1";
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn provider() -> RuntimeProviderStatus {
+        RuntimeProviderStatus {
+            name: "baremetal".to_string(),
+            healthy: true,
+            classes: vec!["process".to_string()],
+            artifact_types: vec!["executable".to_string()],
+            network_modes: vec!["host".to_string(), "none".to_string()],
+            isolation_levels: vec!["sharedHost".to_string()],
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn provider_matches_full_intent_case_insensitively() {
+        let intent = ResolvedSandboxIntent {
+            class: "process".to_string(),
+            artifact_type: Some("EXECUTABLE".to_string()),
+            network_mode: Some("Host".to_string()),
+            isolation: Some("sharedhost".to_string()),
+        };
+
+        assert!(provider().supports_sandbox_intent(&intent));
+    }
+
+    #[test]
+    fn provider_rejects_unsupported_intent_dimension() {
+        let intent = ResolvedSandboxIntent {
+            class: "process".to_string(),
+            artifact_type: Some("wasmModule".to_string()),
+            network_mode: Some("host".to_string()),
+            isolation: Some("sharedHost".to_string()),
+        };
+
+        assert!(!provider().supports_sandbox_intent(&intent));
+    }
 }

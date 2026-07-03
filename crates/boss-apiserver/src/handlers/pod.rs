@@ -66,7 +66,8 @@ pub async fn update_status(
     Path((namespace, name)): Path<(String, String)>,
     Json(body): Json<Pod>,
 ) -> ApiResult<impl IntoResponse> {
-    let pod = generic::update::<PodSpec>(&state, RESOURCE, Some(&namespace), &name, body).await?;
+    let pod =
+        generic::update_status::<PodSpec>(&state, RESOURCE, Some(&namespace), &name, body).await?;
     Ok(Json(pod))
 }
 

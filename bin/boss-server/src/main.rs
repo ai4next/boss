@@ -39,7 +39,6 @@ async fn main() -> Result<()> {
     });
 
     tracing::info!("boss-server starting on {}", args.bind);
-    // TODO: raft-backed storage + leader election.
 
     boss_apiserver::serve(&args.bind, state).await?;
     Ok(())

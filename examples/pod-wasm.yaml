@@ -10,7 +10,7 @@ spec:
   sandbox:
     artifact:
       type: wasmModule
-      uri: oci://example.com/demo.wasm:1.0.0
+      path: /tmp/demo.wasm
     isolation: runtimeSandboxed
     network:
       mode: none

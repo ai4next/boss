@@ -7,7 +7,7 @@ license.workspace = true
 
 [features]
 default = []
-# Raft-backed registry (Phase 5). Currently a stub.
+# Placeholder feature for future raft-backed registry integration.
 raft = ["dep:openraft"]
 
 [dependencies]

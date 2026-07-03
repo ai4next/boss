@@ -114,7 +114,11 @@ impl Storage for MemoryStorage {
         let removed = {
             let mut inner = self.inner.write();
             match inner.data.remove(key) {
-                Some((value, _rv)) => Some(value),
+                Some((mut value, _rv)) => {
+                    let rv = Self::next_rv(&mut inner);
+                    set_rv(&mut value, rv);
+                    Some(value)
+                }
                 None => return Err(StoreError::NotFound(key.to_string())),
             }
         };
@@ -146,5 +150,37 @@ impl Storage for MemoryStorage {
 
     async fn current_revision(&self) -> StoreResult<ResourceVersion> {
         Ok(ResourceVersion(self.inner.read().revision))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use boss_api::{Object, PodSpec, Resource};
+    use tokio_stream::StreamExt;
+
+    fn pod(name: &str) -> Object<PodSpec> {
+        Object::new(name, "default", PodSpec::default())
+    }
+
+    #[tokio::test]
+    async fn delete_event_advances_resource_version() {
+        let storage = MemoryStorage::new();
+        let key = "/registry/pods/default/demo";
+        let created: Object<PodSpec> = storage.create(key, &pod("demo")).await.unwrap();
+        let created_rv = created.metadata.resource_version;
+        let mut watch = storage.watch("/registry/pods/", created_rv).await.unwrap();
+
+        storage.delete(key).await.unwrap();
+
+        let event = watch.next().await.unwrap();
+        let deleted_rv = extract_rv(event.object()).unwrap();
+        assert!(deleted_rv > created_rv);
+    }
+
+    #[test]
+    fn object_new_uses_pod_kind() {
+        let pod = pod("demo");
+        assert_eq!(pod.type_meta.kind, PodSpec::KIND);
     }
 }

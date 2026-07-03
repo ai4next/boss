@@ -45,13 +45,13 @@ Boss 是一个 sandbox-native orchestration system。它的核心目标不是把
 - `boss-store`: in-memory storage、CAS、watch bus。
 - `boss-scheduler`: 能扫描未绑定 Pod，基于 Node runtime capabilities 选择 node/provider 并写入绑定信息。
 - `bosslet`: 节点注册、heartbeat、Provider capability 上报、watch bound Pod、尊重 selected provider 驱动 runtime。
-- `boss-runtime`: `Runtime` trait、`RuntimeManager` 双索引、baremetal runtime 和 container/vm/wasm stub。
+- `boss-runtime`: `Runtime` trait、`RuntimeManager` 双索引、process/container/WASM/VM provider。
 - `bossctl`: apply、get、delete、watch，并能展示 Pod/provider/node capability 摘要。
 
 当前主要缺口：
 
-- `boss-controller-manager` 仍是 skeleton，缺少 list-watch、workqueue、reconciler 和具体控制器。
+- `boss-controller-manager` 已有 watch 驱动 workqueue、reconciler、Deployment/ReplicaSet 控制器和 GC 骨架。
 - `Deployment`、`ReplicaSet` API 路由和 status subresource 还未接入 apiserver。
 - `DeploymentStatus`、`ReplicaSetStatus` 还缺少统一 Conditions 和 `observedGeneration`。
 - Artifact 解析、拉取、校验、本地缓存和日志/指标接口还未形成完整管线。
-- container/vm/wasm Provider 还没有真实执行能力。
+- container/WASM/VM 依赖本地 CLI，可用性由 NodeStatus capability 上报。

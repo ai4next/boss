@@ -28,6 +28,29 @@ struct PodState {
     reported_phase: Option<PodPhase>,
 }
 
+#[derive(Clone, Debug)]
+struct PodStatusUpdate {
+    phase: PodPhase,
+    reason: Option<String>,
+    message: Option<String>,
+    sandbox_id: Option<String>,
+    sandbox_class: Option<String>,
+    provider: Option<String>,
+}
+
+impl PodStatusUpdate {
+    fn new(phase: PodPhase) -> Self {
+        Self {
+            phase,
+            reason: None,
+            message: None,
+            sandbox_id: None,
+            sandbox_class: None,
+            provider: None,
+        }
+    }
+}
+
 /// Node agent: watches pods bound to this node, drives the runtime, reports
 /// status, and heartbeats the node object.
 pub struct Bosslet {
@@ -221,20 +244,51 @@ impl Bosslet {
             return Ok(());
         }
 
-        let sandbox_class = pod.spec.resolved_sandbox_class();
+        let selected_provider = selected_provider_for_pod(&pod);
+        let intent = match pod.spec.try_resolved_sandbox_intent() {
+            Ok(intent) => intent,
+            Err(error) => {
+                self.report_status(
+                    &pod,
+                    &key,
+                    PodStatusUpdate {
+                        reason: Some(error.reason.to_string()),
+                        message: Some(error.message),
+                        provider: selected_provider.clone(),
+                        ..PodStatusUpdate::new(PodPhase::Failed)
+                    },
+                )
+                .await;
+                return Ok(());
+            }
+        };
+        let sandbox_class = intent.class.clone();
         let class = runtime_class_for_sandbox(&sandbox_class).unwrap_or(RuntimeClass::BareMetal);
-        let selected_provider = pod
-            .metadata
-            .annotations
-            .as_ref()
-            .and_then(|annotations| annotations.get(ANNOTATION_SELECTED_PROVIDER))
-            .cloned();
 
-        let provider = match selected_provider
-            .as_deref()
-            .and_then(|name| self.runtime.provider_by_name(name))
-            .or_else(|| self.runtime.default_provider_for_class(&sandbox_class))
-        {
+        let provider = match selected_provider.as_deref() {
+            Some(name) => match self.runtime.provider_by_name(name) {
+                Some(provider) => Some(provider),
+                None => {
+                    let msg = format!("selected provider {name} is not registered on this node");
+                    self.report_status(
+                        &pod,
+                        &key,
+                        PodStatusUpdate {
+                            reason: Some(REASON_PROVIDER_UNAVAILABLE.to_string()),
+                            message: Some(msg),
+                            sandbox_class: Some(sandbox_class.clone()),
+                            provider: Some(name.to_string()),
+                            ..PodStatusUpdate::new(PodPhase::Failed)
+                        },
+                    )
+                    .await;
+                    return Ok(());
+                }
+            },
+            None => self.runtime.default_provider_for_class(&sandbox_class),
+        };
+
+        let provider = match provider {
             Some(provider) => provider,
             None => {
                 let msg = format!("no provider registered for sandbox class {sandbox_class}");
@@ -242,12 +296,13 @@ impl Bosslet {
                 self.report_status(
                     &pod,
                     &key,
-                    PodPhase::Failed,
-                    Some(REASON_UNSUPPORTED_CLASS.to_string()),
-                    Some(msg),
-                    None,
-                    Some(&sandbox_class),
-                    selected_provider.as_deref(),
+                    PodStatusUpdate {
+                        reason: Some(REASON_UNSUPPORTED_CLASS.to_string()),
+                        message: Some(msg),
+                        sandbox_class: Some(sandbox_class.clone()),
+                        provider: selected_provider.clone(),
+                        ..PodStatusUpdate::new(PodPhase::Failed)
+                    },
                 )
                 .await;
                 return Ok(());
@@ -263,12 +318,32 @@ impl Bosslet {
             self.report_status(
                 &pod,
                 &key,
-                PodPhase::Failed,
-                Some(REASON_PROVIDER_UNAVAILABLE.to_string()),
-                Some(msg),
-                None,
-                Some(&sandbox_class),
-                Some(&provider_name),
+                PodStatusUpdate {
+                    reason: Some(REASON_PROVIDER_UNAVAILABLE.to_string()),
+                    message: Some(msg),
+                    sandbox_class: Some(sandbox_class.clone()),
+                    provider: Some(provider_name.clone()),
+                    ..PodStatusUpdate::new(PodPhase::Failed)
+                },
+            )
+            .await;
+            return Ok(());
+        }
+        if !provider_status.supports_sandbox_intent(&intent) {
+            let msg = format!(
+                "provider {provider_name} no longer supports selected sandbox intent: {}",
+                intent.unsupported_message()
+            );
+            self.report_status(
+                &pod,
+                &key,
+                PodStatusUpdate {
+                    reason: Some(REASON_PROVIDER_UNAVAILABLE.to_string()),
+                    message: Some(msg),
+                    sandbox_class: Some(sandbox_class.clone()),
+                    provider: Some(provider_name.clone()),
+                    ..PodStatusUpdate::new(PodPhase::Failed)
+                },
             )
             .await;
             return Ok(());
@@ -299,12 +374,13 @@ impl Bosslet {
                         self.report_status(
                             &pod,
                             &key,
-                            PodPhase::Failed,
-                            Some(REASON_CREATE_FAILED.to_string()),
-                            Some(msg),
-                            None,
-                            Some(&sandbox_class),
-                            Some(&provider_name),
+                            PodStatusUpdate {
+                                reason: Some(REASON_CREATE_FAILED.to_string()),
+                                message: Some(msg),
+                                sandbox_class: Some(sandbox_class.clone()),
+                                provider: Some(provider_name.clone()),
+                                ..PodStatusUpdate::new(PodPhase::Failed)
+                            },
                         )
                         .await;
                         return Ok(());
@@ -328,12 +404,14 @@ impl Bosslet {
                 self.report_status(
                     &pod,
                     &key,
-                    PodPhase::Failed,
-                    Some(REASON_START_FAILED.to_string()),
-                    Some(msg),
-                    Some(&sandbox_id),
-                    Some(&sandbox_class),
-                    Some(&provider_name),
+                    PodStatusUpdate {
+                        reason: Some(REASON_START_FAILED.to_string()),
+                        message: Some(msg),
+                        sandbox_id: Some(sandbox_id.clone()),
+                        sandbox_class: Some(sandbox_class.clone()),
+                        provider: Some(provider_name.clone()),
+                        ..PodStatusUpdate::new(PodPhase::Failed)
+                    },
                 )
                 .await;
                 return Ok(());
@@ -346,12 +424,12 @@ impl Bosslet {
         self.report_status(
             &pod,
             &key,
-            PodPhase::Running,
-            None,
-            None,
-            Some(&sandbox_id),
-            Some(&sandbox_class),
-            Some(&provider_name),
+            PodStatusUpdate {
+                sandbox_id: Some(sandbox_id.clone()),
+                sandbox_class: Some(sandbox_class.clone()),
+                provider: Some(provider_name.clone()),
+                ..PodStatusUpdate::new(PodPhase::Running)
+            },
         )
         .await;
         Ok(())
@@ -376,22 +454,12 @@ impl Bosslet {
 
     // ---- Status reporting (CAS retry) ----
 
-    async fn report_status(
-        &self,
-        pod: &Pod,
-        key: &str,
-        phase: PodPhase,
-        reason: Option<String>,
-        message: Option<String>,
-        sandbox_id: Option<&str>,
-        sandbox_class: Option<&str>,
-        provider: Option<&str>,
-    ) {
+    async fn report_status(&self, pod: &Pod, key: &str, update: PodStatusUpdate) {
         // Suppress the feedback loop: skip if we already reported this phase.
         let already_reported = self
             .pods
             .get(key)
-            .map(|s| s.reported_phase == Some(phase))
+            .map(|s| s.reported_phase == Some(update.phase))
             .unwrap_or(false);
         if already_reported {
             return;
@@ -411,14 +479,14 @@ impl Bosslet {
             };
             let started_at = boss_common::time::now_rfc3339();
             let status = latest.status.get_or_insert_default();
-            status.phase = phase;
-            status.message = message.clone();
-            status.reason = reason.clone();
-            status.sandbox_class = sandbox_class.map(str::to_string);
-            status.provider = provider.map(str::to_string);
-            if phase == PodPhase::Running {
+            status.phase = update.phase;
+            status.message = update.message.clone();
+            status.reason = update.reason.clone();
+            status.sandbox_class = update.sandbox_class.clone();
+            status.provider = update.provider.clone();
+            if update.phase == PodPhase::Running {
                 status.start_time = Some(started_at.clone());
-                status.sandbox_id = sandbox_id.map(|s| s.to_string());
+                status.sandbox_id = update.sandbox_id.clone();
                 status.host_ip = Some("127.0.0.1".into());
                 let cs = latest
                     .spec
@@ -427,7 +495,7 @@ impl Bosslet {
                     .map(|c| ContainerStatus {
                         name: c.name.clone(),
                         ready: true,
-                        container_id: sandbox_id.map(|s| s.to_string()),
+                        container_id: update.sandbox_id.clone(),
                         state: Some(ContainerState::Running { started_at }),
                     })
                     .unwrap_or_default();
@@ -440,7 +508,7 @@ impl Bosslet {
             {
                 Ok(_) => {
                     if let Some(mut s) = self.pods.get_mut(key) {
-                        s.reported_phase = Some(phase);
+                        s.reported_phase = Some(update.phase);
                     }
                     return;
                 }
@@ -534,12 +602,13 @@ impl Bosslet {
             self.report_status(
                 &pod,
                 &key,
-                phase,
-                None,
-                msg,
-                Some(&sid),
-                sandbox_class.as_deref(),
-                provider.as_deref(),
+                PodStatusUpdate {
+                    message: msg,
+                    sandbox_id: Some(sid),
+                    sandbox_class,
+                    provider,
+                    ..PodStatusUpdate::new(phase)
+                },
             )
             .await;
         }
@@ -573,6 +642,14 @@ fn runtime_class_for_sandbox(class: &str) -> Option<RuntimeClass> {
     }
 }
 
+fn selected_provider_for_pod(pod: &Pod) -> Option<String> {
+    pod.metadata
+        .annotations
+        .as_ref()
+        .and_then(|annotations| annotations.get(ANNOTATION_SELECTED_PROVIDER))
+        .cloned()
+}
+
 fn build_sandbox_spec(
     pod: &Pod,
     class: RuntimeClass,
@@ -580,7 +657,18 @@ fn build_sandbox_spec(
     provider: Option<&str>,
 ) -> SandboxSpec {
     let c = pod.spec.containers.first();
-    let command = c.map(|c| c.command.clone()).unwrap_or_default();
+    let artifact = pod
+        .spec
+        .sandbox
+        .as_ref()
+        .and_then(|sandbox| sandbox.artifact.as_ref());
+    let mut command = c.map(|c| c.command.clone()).unwrap_or_default();
+    if command.is_empty()
+        && sandbox_class == "process"
+        && let Some(path) = artifact.and_then(|artifact| artifact.path.clone())
+    {
+        command.push(path);
+    }
     let args = c.map(|c| c.args.clone()).unwrap_or_default();
     let env = c
         .map(|c| {
@@ -600,10 +688,31 @@ fn build_sandbox_spec(
         command,
         args,
         env,
-        image: c.and_then(|c| c.image.clone()),
+        image: c
+            .and_then(|c| c.image.clone())
+            .or_else(|| artifact.and_then(|artifact| artifact.image.clone()))
+            .or_else(|| artifact.and_then(|artifact| artifact.uri.clone())),
+        artifact_type: artifact.map(|artifact| artifact.kind.clone()),
+        artifact_uri: c
+            .and_then(|c| c.wasm_module.clone())
+            .or_else(|| artifact.and_then(|artifact| artifact.uri.clone())),
+        artifact_path: artifact.and_then(|artifact| artifact.path.clone()),
         wasm_module: None,
-        network: NetworkMode::Host,
+        network: network_mode_for_pod(pod),
     }
+}
+
+fn network_mode_for_pod(pod: &Pod) -> NetworkMode {
+    pod.spec
+        .sandbox
+        .as_ref()
+        .and_then(|sandbox| sandbox.network.as_ref())
+        .and_then(|network| network.mode.as_deref())
+        .map(|mode| match mode.to_ascii_lowercase().as_str() {
+            "none" => NetworkMode::None,
+            _ => NetworkMode::Host,
+        })
+        .unwrap_or(NetworkMode::Host)
 }
 
 // Re-export Object for completeness.

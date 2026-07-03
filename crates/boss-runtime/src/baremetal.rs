@@ -15,8 +15,7 @@ struct BareSandbox {
 }
 
 /// BareMetal runtime: spawns the configured command as a host process via
-/// `tokio::process::Command`. This is the only fully-wired provider in the
-/// skeleton — it makes the end-to-end flow (pod → process) observable.
+/// `tokio::process::Command`.
 pub struct BareMetalRuntime {
     sandboxes: DashMap<SandboxId, BareSandbox>,
 }

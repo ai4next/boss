@@ -64,7 +64,7 @@ pub async fn update_status(
     Path(name): Path<String>,
     Json(body): Json<Node>,
 ) -> ApiResult<impl IntoResponse> {
-    let node = generic::update::<NodeSpec>(&state, RESOURCE, None, &name, body).await?;
+    let node = generic::update_status::<NodeSpec>(&state, RESOURCE, None, &name, body).await?;
     Ok(Json(node))
 }
 

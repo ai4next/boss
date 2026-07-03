@@ -6,9 +6,10 @@ container, VM, microVM, WASM, and remote sandboxes should share one control
 plane without being forced into a single runtime model.
 
 The current implementation has a working control plane, node agent,
-capability-aware scheduler, and process runtime path. Container, VM, and WASM
-providers are present as stubs while the controller framework and real provider
-implementations are still being built.
+capability-aware scheduler, controller loop, Deployment/ReplicaSet reconciliation,
+and process runtime path. Container, WASM, and VM/microVM providers are
+CLI-backed optional providers (`docker`/`podman`, `wasmtime`, `qemu-system-*`)
+and report unhealthy when the local backend is unavailable.
 
 ## Workspace layout
 
@@ -16,15 +17,15 @@ implementations are still being built.
 crates/
   boss-common            # errors, logging, id, time
   boss-api               # pure serde data model (Object<T>, Pod, Node, ...)
-  boss-store             # Storage trait + InMemoryRegistry + WatchBus (raft: stub)
+  boss-store             # Storage trait + in-memory registry + WatchBus
   boss-apiserver         # axum CRUD + newline-delimited watch + CAS
   boss-scheduler         # capability-aware pod binding to node/provider
-  boss-controller-manager# reconciler trait skeleton, controller loop pending
+  boss-controller-manager# watch-driven workqueue + Deployment/ReplicaSet reconciliation
   bosslet                # node agent: watch -> sync -> runtime -> status -> heartbeat
-  boss-runtime           # Runtime trait + BareMetal (real) + container/vm/wasm (stubs)
+  boss-runtime           # Runtime trait + process/container/wasm/vm providers
   bossctl                # CLI client (apply / get / delete / watch)
 bin/
-  boss-server            # control plane: apiserver + storage + scheduler + CM skeleton
+  boss-server            # control plane: apiserver + storage + scheduler + controller manager
   boss-node              # node: bosslet + RuntimeManager providers
 ```
 
@@ -107,6 +108,7 @@ on delete.
 
 - ✅ Workspace, data model, in-memory store, apiserver, CLI, bosslet, and baremetal runtime are end-to-end runnable.
 - ✅ Pod sandbox intent, Node runtime capabilities, RuntimeManager provider indexing, scheduler binding, and bosslet provider selection have foundation support.
-- ⬜ Controller manager reconcile loop, Deployment/ReplicaSet controllers, workqueue, and status conditions are pending.
-- ⬜ Artifact resolver/cache, richer scheduling scoring, and real container/vm/wasm providers are pending.
+- ✅ Controller manager has watch-driven workqueues, Deployment/ReplicaSet reconciliation, basic garbage collection, and status conditions.
+- ✅ Process, container, WASM, and VM/microVM runtime paths are implemented through local providers.
+- ⬜ Production artifact cache, richer scheduling scoring, and HA/security hardening remain future work.
 - ⬜ Raft-backed store, multi-replica control plane, leader election, AuthN/AuthZ/RBAC, and policy admission are future production-hardening work.

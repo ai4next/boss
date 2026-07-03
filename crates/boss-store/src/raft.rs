@@ -1,15 +1,14 @@
-//! Raft-backed storage (Phase 5). Currently a stub.
+//! Raft-backed storage placeholder.
 //!
-//! TODO: openraft FSM storing `BTreeMap<key, (value, rv)>`, multi-node
-//! initialize/join via `add_learner`, snapshot/restore, linearizable
-//! read-index. The `WatchBus` is fed from the FSM apply path.
+//! The single-node final build uses `MemoryStorage`. This type exists so the
+//! feature compiles and callers receive explicit errors instead of panics.
 
 use boss_api::ResourceVersion;
 
+use crate::error::StoreResult;
 use crate::storage::{WatchEvent, WatchStream};
 
-/// Placeholder raft registry. All methods panic — use `MemoryStorage` until
-/// Phase 5 lands.
+/// Placeholder raft registry for future multi-node storage.
 pub struct RaftStorage;
 
 impl RaftStorage {
@@ -24,14 +23,21 @@ impl Default for RaftStorage {
     }
 }
 
-#[allow(unused_variables)]
 impl RaftStorage {
-    pub async fn current_revision(&self) -> ResourceVersion {
-        unimplemented!("raft storage is Phase 5; use MemoryStorage")
+    pub async fn current_revision(&self) -> StoreResult<ResourceVersion> {
+        Err(boss_common::BossError::NotImplemented(
+            "raft storage is not included in the single-node build; use MemoryStorage".into(),
+        ))
     }
 
-    pub async fn watch(&self, prefix: &str, start_rv: ResourceVersion) -> WatchStream {
-        unimplemented!("raft storage is Phase 5; use MemoryStorage")
+    pub async fn watch(
+        &self,
+        _prefix: &str,
+        _start_rv: ResourceVersion,
+    ) -> StoreResult<WatchStream> {
+        Err(boss_common::BossError::NotImplemented(
+            "raft storage is not included in the single-node build; use MemoryStorage".into(),
+        ))
     }
 }
 

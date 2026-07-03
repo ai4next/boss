@@ -88,3 +88,21 @@ impl RuntimeManager {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::VmRuntime;
+
+    #[test]
+    fn provider_can_be_indexed_under_multiple_classes() {
+        let manager = RuntimeManager::new();
+        manager.register_provider(
+            Arc::new(VmRuntime::new()),
+            vec!["vm".to_string(), "microvm".to_string()],
+        );
+
+        assert!(manager.default_provider_for_class("vm").is_some());
+        assert!(manager.default_provider_for_class("microvm").is_some());
+    }
+}

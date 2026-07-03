@@ -1,6 +1,6 @@
-//! CRI-style runtime abstraction with multiple providers. BareMetal is a real
-//! process-spawning implementation (proves end-to-end); container/vm/wasm are
-//! stubs returning `NotImplemented` (Phase 6).
+//! CRI-style runtime abstraction with multiple providers. Process, container,
+//! WASM, and VM/microVM providers are executable locally when their host
+//! backends are installed.
 
 pub mod baremetal;
 pub mod container;

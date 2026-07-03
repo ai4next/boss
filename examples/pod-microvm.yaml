@@ -10,7 +10,7 @@ spec:
   sandbox:
     artifact:
       type: rootfsImage
-      uri: oci://example.com/demo-rootfs:latest
+      path: /tmp/demo-rootfs.img
     isolation: hardwareVirtualized
     network:
       mode: none

@@ -11,13 +11,13 @@
 | Pod sandbox intent | 已具备 | `sandboxClass`、`sandbox`、artifact/network/security 字段已存在 |
 | Node runtime capabilities | 已具备 | `runtimeCapabilities.providers` 已建模并由 bosslet 上报 |
 | RuntimeManager 双索引 | 已具备 | 支持按 provider name 和 sandbox class 查询 |
-| 能力感知调度 | 已具备基础能力 | scheduler 能绑定 node/provider，后续补充评分和资源约束 |
-| Bosslet provider selection | 已具备基础能力 | bosslet 尊重 selected-provider，缺失时使用本地默认 Provider |
+| 能力感知调度 | 已具备基础能力 | scheduler 能按 sandbox class、artifact type、network mode、isolation level 绑定 node/provider，后续补充评分和资源约束 |
+| Bosslet provider selection | 已具备基础能力 | bosslet 尊重 selected-provider，并在启动前重新校验 Provider 能力 |
 | CLI 可观测输出 | 已具备基础能力 | Pod 和 Node 输出包含 sandbox/provider 摘要 |
-| Controller framework | 待实现 | 需要 list-watch、cache、workqueue、reconciler、status conditions |
-| Deployment/ReplicaSet 收敛 | 待实现 | API 类型存在，控制器和 apiserver 路由待补齐 |
-| Artifact pipeline | 待实现 | 需要解析、拉取、校验、本地缓存和错误标准化 |
-| 真实 Provider | 待实现 | container/wasm/vm 目前仍是 stub |
+| Controller framework | 已具备基础能力 | 已有 watch 驱动 workqueue、reconciler、retry/requeue 和 status conditions |
+| Deployment/ReplicaSet 收敛 | 已具备基础能力 | 已有 API 路由、Deployment 到 ReplicaSet、ReplicaSet 到 Pod 的最小闭环 |
+| Artifact handling | 已具备基础能力 | 支持本地路径、容器镜像和 Provider 原生拉取；生产级缓存/校验待扩展 |
+| 真实 Provider | 已具备基础能力 | process/container/WASM/VM 已可运行；非 process Provider 依赖本地 CLI |
 
 ## 近期重点：控制器体系
 
@@ -29,7 +29,7 @@
 - 增加 `Reflector`、`LocalCache`、`WorkQueue`、retry 和 requeue-after。
 - 实现 Deployment controller：Deployment 收敛到 owned ReplicaSet。
 - 实现 ReplicaSet controller：ReplicaSet 收敛到 owned Pod。
-- 增加 Garbage Collector skeleton：处理 controller owner 删除后的级联清理。
+- 增加基础 Garbage Collector：处理 controller owner 删除后的级联清理。
 - 为 Deployment/ReplicaSet 增加 apiserver CRUD/list/watch/status 路由。
 - 为 DeploymentStatus/ReplicaSetStatus 增加 `observedGeneration` 和 Conditions。
 
@@ -48,7 +48,7 @@
 
 关键改动：
 
-- Scheduler filter 增加 artifact type、network mode、isolation level 校验。
+- Scheduler filter 已增加 artifact type、network mode、isolation level 校验。
 - Scheduler score 增加 provider health、节点名稳定排序、artifact cache hint。
 - Bosslet 在启动前校验 selected provider 是否仍然支持目标 sandbox intent。
 - Provider unhealthy 时快速刷新 NodeStatus，不把整个 Node 强制标记为 NotReady。
@@ -61,9 +61,9 @@
 - 已绑定 Pod 如果 provider 缺失，bosslet 写入稳定失败 reason。
 - CLI 能解释 Pod 等待、运行或失败的主要原因。
 
-## Artifact Pipeline
+## Production Artifact Pipeline
 
-目标：把用户描述的 artifact URI 转换为 provider 可消费的本地制品，并把准备成本纳入调度和状态。
+目标：把用户描述的 artifact URI 转换为 provider 可消费的本地制品，并把准备成本纳入调度和状态。当前本地最终版已支持 Provider 直接消费本地路径或镜像引用；本节描述生产级缓存和校验扩展。
 
 关键改动：
 

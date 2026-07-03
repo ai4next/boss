@@ -49,16 +49,32 @@ impl RuntimeCapabilities {
         network_modes: Vec<&str>,
         isolation_levels: Vec<&str>,
     ) -> Self {
+        Self::with_reason(
+            name,
+            healthy,
+            if healthy { None } else { Some("Unavailable") },
+            classes,
+            artifact_types,
+            network_modes,
+            isolation_levels,
+        )
+    }
+
+    pub fn with_reason(
+        name: impl Into<String>,
+        healthy: bool,
+        reason: Option<&str>,
+        classes: Vec<&str>,
+        artifact_types: Vec<&str>,
+        network_modes: Vec<&str>,
+        isolation_levels: Vec<&str>,
+    ) -> Self {
         Self {
             provider: RuntimeProviderStatus {
                 name: name.into(),
                 healthy,
                 version: Some(env!("CARGO_PKG_VERSION").to_string()),
-                reason: if healthy {
-                    None
-                } else {
-                    Some("NotImplemented".to_string())
-                },
+                reason: reason.map(str::to_string),
                 classes: classes.into_iter().map(str::to_string).collect(),
                 artifact_types: artifact_types.into_iter().map(str::to_string).collect(),
                 network_modes: network_modes.into_iter().map(str::to_string).collect(),
@@ -93,6 +109,9 @@ pub struct SandboxSpec {
     pub args: Vec<String>,
     pub env: BTreeMap<String, String>,
     pub image: Option<String>,
+    pub artifact_type: Option<String>,
+    pub artifact_uri: Option<String>,
+    pub artifact_path: Option<String>,
     pub wasm_module: Option<Vec<u8>>,
     pub network: NetworkMode,
 }
