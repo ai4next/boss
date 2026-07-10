@@ -99,6 +99,16 @@ impl ApiServerClient {
             .await?;
         decode(resp).await
     }
+
+    pub async fn update_node_status(&self, name: &str, node: &Node) -> Result<Node> {
+        let resp = self
+            .http
+            .put(self.url(&format!("/api/v1/nodes/{name}/status")))
+            .json(node)
+            .send()
+            .await?;
+        decode(resp).await
+    }
 }
 
 async fn decode<T: serde::de::DeserializeOwned>(resp: Response) -> Result<T> {

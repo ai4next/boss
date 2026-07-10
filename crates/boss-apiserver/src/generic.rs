@@ -15,25 +15,10 @@ pub async fn create<T: Resource>(
     namespace: Option<&str>,
     mut obj: Object<T>,
 ) -> ApiResult<Object<T>> {
-    // Defaulting. For namespaced resources, fill namespace from the URL if
-    // absent; cluster-scoped resources (namespace == None) keep it empty.
-    if let Some(ns) = namespace
-        && !ns.is_empty()
-        && obj.metadata.namespace.is_empty()
-    {
-        obj.metadata.namespace = ns.to_string();
+    if obj.metadata.name.is_empty() {
+        return Err(ApiError::Invalid("metadata.name is required".to_string()));
     }
-    if obj.metadata.uid.is_none() {
-        obj.metadata.uid = Some(boss_common::id::new_uid());
-    }
-    if obj.metadata.creation_timestamp.is_none() {
-        obj.metadata.creation_timestamp = Some(boss_common::time::now_rfc3339());
-    }
-    obj.metadata.generation = 1;
-    obj.type_meta = TypeMeta {
-        api_version: T::API_VERSION.to_string(),
-        kind: T::KIND.to_string(),
-    };
+    obj.default_metadata(namespace);
 
     let key = build_key(resource, Some(&obj.metadata.namespace), &obj.metadata.name);
     let created = state.storage.create(&key, &obj).await?;
@@ -76,6 +61,9 @@ pub async fn update<T: Resource>(
     name: &str,
     mut body: Object<T>,
 ) -> ApiResult<Object<T>> {
+    if name.is_empty() {
+        return Err(ApiError::Invalid("metadata.name is required".to_string()));
+    }
     // Force name/namespace consistency with the URL.
     body.metadata.name = name.to_string();
     if let Some(ns) = namespace
@@ -145,7 +133,9 @@ pub async fn delete<T: Resource>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use boss_api::{Container, Object, PodPhase, PodSpec, PodStatus};
+    use boss_api::{
+        Container, NodeCondition, NodeSpec, NodeStatus, Object, PodPhase, PodSpec, PodStatus,
+    };
     use boss_store::{MemoryStorage, StorageBackend};
     use std::sync::Arc;
 
@@ -167,6 +157,10 @@ mod tests {
                 ..Default::default()
             },
         )
+    }
+
+    fn node(name: &str) -> Object<NodeSpec> {
+        Object::new(name, "", NodeSpec::default())
     }
 
     #[tokio::test]
@@ -214,5 +208,29 @@ mod tests {
 
         assert_eq!(updated.spec.containers.len(), 1);
         assert_eq!(updated.status.unwrap().phase, PodPhase::Failed);
+    }
+
+    #[tokio::test]
+    async fn node_status_subresource_updates_status() {
+        let state = state();
+        let created = create(&state, "nodes", None, node("node-a")).await.unwrap();
+
+        let mut body = created;
+        body.status = Some(NodeStatus {
+            conditions: vec![NodeCondition {
+                kind: "Ready".to_string(),
+                status: "True".to_string(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        });
+        let updated = update_status(&state, "nodes", None, "node-a", body)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            updated.status.unwrap().conditions[0].status.as_str(),
+            "True"
+        );
     }
 }

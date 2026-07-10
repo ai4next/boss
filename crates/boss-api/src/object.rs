@@ -57,6 +57,26 @@ impl<T: Resource> Object<T> {
         self.status = Some(status);
         self
     }
+
+    pub fn default_metadata(&mut self, namespace: Option<&str>) {
+        if let Some(ns) = namespace
+            && !ns.is_empty()
+            && self.metadata.namespace.is_empty()
+        {
+            self.metadata.namespace = ns.to_string();
+        }
+        if self.metadata.uid.is_none() {
+            self.metadata.uid = Some(boss_common::id::new_uid());
+        }
+        if self.metadata.creation_timestamp.is_none() {
+            self.metadata.creation_timestamp = Some(boss_common::time::now_rfc3339());
+        }
+        self.metadata.generation = 1;
+        self.type_meta = TypeMeta {
+            api_version: T::API_VERSION.to_string(),
+            kind: T::KIND.to_string(),
+        };
+    }
 }
 
 /// List response wrapper, carrying the list's resource version.

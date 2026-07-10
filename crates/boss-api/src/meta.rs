@@ -75,6 +75,7 @@ impl Condition {
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ObjectMeta {
+    #[serde(default)]
     pub name: String,
     #[serde(default)]
     pub namespace: String,

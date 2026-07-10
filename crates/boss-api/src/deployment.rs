@@ -81,3 +81,51 @@ impl Resource for DeploymentSpec {
     const KIND: &'static str = "Deployment";
     const API_VERSION: &'static str = "boss.io/apps/v1";
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pod_template_metadata_does_not_require_name() {
+        let deployment: Deployment = serde_json::from_value(serde_json::json!({
+            "apiVersion": "boss.io/apps/v1",
+            "kind": "Deployment",
+            "metadata": {
+                "name": "demo",
+                "namespace": "default"
+            },
+            "spec": {
+                "replicas": 1,
+                "selector": {
+                    "matchLabels": {
+                        "app": "demo"
+                    }
+                },
+                "template": {
+                    "metadata": {
+                        "labels": {
+                            "app": "demo"
+                        }
+                    },
+                    "spec": {
+                        "containers": [
+                            {
+                                "name": "sleep",
+                                "command": ["sleep"],
+                                "args": ["300"]
+                            }
+                        ]
+                    }
+                }
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(
+            deployment.spec.template.metadata.labels.unwrap().get("app"),
+            Some(&"demo".to_string())
+        );
+        assert_eq!(deployment.spec.template.metadata.name, "");
+    }
+}

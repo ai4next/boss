@@ -422,6 +422,8 @@ impl DeploymentController {
                 }
             }
             Err(StoreError::NotFound(_)) => {
+                let mut desired = desired;
+                desired.default_metadata(Some(&deployment.metadata.namespace));
                 self.storage
                     .create::<ReplicaSet>(&replica_set_key, &desired)
                     .await?;
@@ -528,7 +530,8 @@ impl ReplicaSetController {
         let desired = replica_set.spec.replicas.max(0) as usize;
         if pods.len() < desired {
             for index in pods.len()..desired {
-                let pod = pod_for_replica_set(replica_set, index);
+                let mut pod = pod_for_replica_set(replica_set, index);
+                pod.default_metadata(Some(&replica_set.metadata.namespace));
                 let key = build_key("pods", Some(&pod.metadata.namespace), &pod.metadata.name);
                 match self.storage.create::<Pod>(&key, &pod).await {
                     Ok(_) => {}
@@ -775,11 +778,16 @@ fn template_hash(deployment: &Deployment) -> String {
 }
 
 fn owner_ref<T: Resource>(obj: &Object<T>) -> OwnerReference {
+    let uid = obj
+        .metadata
+        .uid
+        .clone()
+        .expect("controller owner must have a uid before creating dependents");
     OwnerReference {
         api_version: T::API_VERSION.to_string(),
         kind: T::KIND.to_string(),
         name: obj.metadata.name.clone(),
-        uid: obj.metadata.uid.clone().unwrap_or_default(),
+        uid,
         controller: Some(true),
     }
 }
@@ -1104,6 +1112,9 @@ mod tests {
             .unwrap();
         assert_eq!(replica_sets.len(), 1);
         assert_eq!(replica_sets[0].spec.replicas, 2);
+        assert!(replica_sets[0].metadata.uid.is_some());
+        assert!(replica_sets[0].metadata.creation_timestamp.is_some());
+        assert_eq!(replica_sets[0].metadata.generation, 1);
         assert_eq!(
             replica_sets[0].spec.template.spec.sandbox_class.as_deref(),
             Some("process")
@@ -1115,8 +1126,9 @@ mod tests {
     async fn replicaset_controller_creates_owned_pods_with_unbound_intent() {
         let storage = storage();
         let deployment = deployment("demo", 2);
-        let replica_set =
+        let mut replica_set =
             replica_set_for_deployment(&deployment, &current_replica_set_name(&deployment));
+        replica_set.default_metadata(Some(&deployment.metadata.namespace));
         let replica_set_key = build_key("replicasets", Some("default"), &replica_set.metadata.name);
         storage
             .create(&replica_set_key, &replica_set)
@@ -1136,7 +1148,14 @@ mod tests {
         for pod in pods {
             assert_eq!(pod.spec.node_name, None);
             assert_eq!(pod.spec.sandbox_class.as_deref(), Some("process"));
+            assert!(pod.metadata.uid.is_some());
+            assert!(pod.metadata.creation_timestamp.is_some());
+            assert_eq!(pod.metadata.generation, 1);
             assert!(controlled_by(&pod, &owner_ref(&replica_set)));
+            assert_eq!(
+                controller_owner(&pod.metadata).map(|owner| owner.uid.as_str()),
+                replica_set.metadata.uid.as_deref()
+            );
         }
     }
 

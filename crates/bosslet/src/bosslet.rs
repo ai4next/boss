@@ -81,11 +81,16 @@ impl Bosslet {
             let me = self.clone();
             tokio::spawn(async move { me.pleg_loop().await })
         };
+        let pod_resync = {
+            let me = self.clone();
+            tokio::spawn(async move { me.pod_resync_loop().await })
+        };
 
         self.watch_loop().await?;
 
         heartbeat.abort();
         pleg.abort();
+        pod_resync.abort();
         Ok(())
     }
 
@@ -102,7 +107,9 @@ impl Bosslet {
                 let mut n = existing;
                 n.spec = node.spec.clone();
                 n.status = node.status.clone();
-                self.client.update_node(&self.node_name, &n).await?;
+                let mut n = self.client.update_node(&self.node_name, &n).await?;
+                n.status = node.status.clone();
+                self.client.update_node_status(&self.node_name, &n).await?;
                 tracing::info!(node = %self.node_name, "updated existing node");
             }
         }
@@ -130,7 +137,7 @@ impl Bosslet {
             set_ready(status);
             status.heartbeat = Some(boss_common::time::now_rfc3339());
             status.runtime_capabilities = Some(self.runtime.all_capabilities().await);
-            match self.client.update_node(&self.node_name, &node).await {
+            match self.client.update_node_status(&self.node_name, &node).await {
                 Ok(_) => return Ok(()),
                 Err(e) => {
                     tracing::debug!(error = %e, "heartbeat CAS retry");
@@ -440,6 +447,42 @@ impl Bosslet {
         self.teardown(&key).await;
         Ok(())
     }
+
+    async fn pod_resync_loop(&self) {
+        let mut tick = tokio::time::interval(std::time::Duration::from_secs(10));
+        loop {
+            tick.tick().await;
+            if let Err(e) = self.pod_resync_once().await {
+                tracing::warn!(error = %e, "pod resync failed");
+            }
+        }
+    }
+
+    async fn pod_resync_once(&self) -> Result<()> {
+        let pods = self.client.list_pods().await?;
+        let mut desired = std::collections::BTreeSet::new();
+        for pod in pods {
+            if pod.spec.node_name.as_deref() != Some(self.node_name.as_str()) {
+                continue;
+            }
+            let key = format!("{}/{}", pod.metadata.namespace, pod.metadata.name);
+            desired.insert(key.clone());
+            if pod.metadata.deletion_timestamp.is_some() {
+                self.teardown(&key).await;
+            } else {
+                self.sync_pod(pod).await?;
+            }
+        }
+
+        let local_keys: Vec<String> = self.pods.iter().map(|entry| entry.key().clone()).collect();
+        for key in local_keys {
+            if !desired.contains(&key) {
+                self.teardown(&key).await;
+            }
+        }
+        Ok(())
+    }
+
     async fn teardown(&self, key: &str) {
         let state = self.pods.remove(key);
         if let Some((_, state)) = state
